@@ -1,4 +1,4 @@
-# technical-challenge-3
+# Technical-Challenge
  Challenge_1 :- Three tier cloudformation template
  
  Challenge_2 :- CURL instance metada
