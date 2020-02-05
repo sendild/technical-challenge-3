@@ -1,0 +1,158 @@
+{
+"AWSTemplateFormatVersion" : "2010-09-09",
+"Description" : "This template creates three tier web application. The first tier is public facing with it's own LoadBalancer and ASG. The second tier is deployed in it's own private subnet. The third tier is an AWS RDS MySQL database. The template needs few paramaters, and these are captured in Paramters section of the cloudformation template.",
+"Parameters" : {     
+     "MyWebTierEc2SecurityGroup" : { 
+      "Description" : "Name of an existing EC2 KeyPair", 
+      "Type" : "AWS::EC2::KeyPair::KeyName", 
+      "ConstraintDescription" : "must be the name of an existing EC2 KeyPair." 
+    },
+    "MyApplicationTierApplicationAMI-id" : {
+      "Description" : "Name of an existing ApplicationTier AMI id SecurityGroup", 
+      "Type" : "AWS::EC2::SecurityGroup"      
+    },
+
+    "MyAppTierEc2SecurityGroup-id": {
+      "Description" : "Name of an existing EC2 SecurityGroup", 
+      "Type" : "AWS::EC2::SecurityGroup"
+       },
+    "DBName": {
+      "Description" : "MySQL database name",
+      "Type": "String"
+    },
+    "MultiAZDatabase" : {
+      "Description" : "Create a multi-AZ MySQL Amazon RDS database instance",
+      "Type": "String",
+      "AllowedValues" : [ "true", "false" ]
+    },
+
+    "DBUser" : {
+      "NoEcho": "true",
+      "Description" : "Username for MySQL database access",
+      "Type": "String"
+    },
+    "DBClass" : {
+        "Default" : "db.m1.large",
+         "Description" : "Database instance class",   
+         "Type" : "String"
+    },
+      "DBAllocatedStorage" : {
+         "Default": "20",
+         "Description" : "The size of the database (Gb)",   
+         "Type": "Number" 
+      },
+      "DBPassword" : {
+         "NoEcho": "true",
+         "Description" : "Username for MySQL database access",
+         "Type": "String"
+      }
+   },
+  
+
+
+
+"PublicLoadBalancerforTier1" : {
+   "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+   "Properties" : {
+       "AvailabilityZones" : [ "eu-west-1a", "eu-west-1b", "eu-west-1c" ],
+       "Listeners" : [ {
+           "LoadBalancerPort" : "80",
+           "InstancePort" : "80",
+           "Protocol" : "HTTP"
+       } ],
+
+       "HealthCheck" : {
+           "Target" : "HTTP:80/",
+           "HealthyThreshold" : "3",
+           "UnhealthyThreshold" : "5",
+           "Interval" : "30",
+           "Timeout" : "5"
+       }
+   }
+},
+
+"MyWebTierAutoscalingGroup" : {
+   "Type" : "AWS::AutoScaling::LaunchConfiguration",
+   "Properties" : {
+      "ImageId" : { "ami-0ff8a91507f7aaaaa7" },
+      "SecurityGroups" : [ { "Ref" : "MyWebTierEc2SecurityGroup" } ],
+      "LoadBalancerNames" : [ "PublicLoadBalancerforTier1" ],
+      "DesiredCapacity" : "3",
+      "MaxSize" : "6",
+      "InstanceType" : "m1.small",
+      "BlockDeviceMappings" : [ {
+            "DeviceName" : "/dev/sdk",
+            "Ebs" : {"VolumeSize" : "50"}
+         }, {
+            "DeviceName" : "/dev/sdc",
+            "VirtualName" : "ephemeral0"
+      } ]
+   }
+},
+
+
+"PrivateLoadBalancerforTier2" : {
+   "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+   "Properties" : {
+       "AvailabilityZones" : [ "eu-west-1a", "eu-west-1b", "eu-west-1c" ],
+       "Listeners" : [ {
+           "LoadBalancerPort" : "8080",
+           "InstancePort" : "8080",
+           "Protocol" : "HTTP"
+       } ],
+
+       "HealthCheck" : {
+           "Target" : "HTTP:8080/",
+           "HealthyThreshold" : "3",
+           "UnhealthyThreshold" : "5",
+           "Interval" : "30",
+           "Timeout" : "5"
+       }
+   }
+},
+
+"MyApplicationTierAutoscalingGroup" : {
+   "Type" : "AWS::AutoScaling::LaunchConfiguration",
+   "Properties" : {
+      "ImageId" : { "ami-0ff8a91507f77f867" },
+      "SecurityGroups" : [ {"Ref": "MyAppTierEc2SecurityGroup-id", "DBEC2SecurityGroup" } ],
+      "LoadBalancerNames" : [ "PrivateLoadBalancerforTier2" ],
+      "DesiredCapacity" : "3",
+      "MaxSize" : "6",
+      "InstanceType" : "m1.small",
+      "BlockDeviceMappings" : [ {
+            "DeviceName" : "/dev/sdk",
+            "Ebs" : {"VolumeSize" : "50"}
+         }, {
+            "DeviceName" : "/dev/sdc",
+            "VirtualName" : "ephemeral0"
+      } ]
+   }
+},
+
+{
+   "DBEC2SecurityGroup": {
+     "Type": "AWS::EC2::SecurityGroup",
+     "Properties" : {
+       "GroupDescription": "Open database for access",
+       "SecurityGroupIngress" : [{
+         "IpProtocol" : "tcp",
+         "FromPort" : "3306",
+         "ToPort" : "3306"      
+      }]
+     }
+   },
+   "DBInstance" : {
+     "Type": "AWS::RDS::DBInstance",
+     "Properties": {
+       "DBName"            : { "Ref" : "DBName" },
+       "Engine"            : "MySQL",
+       "MultiAZ"           : { "Ref": "MultiAZDatabase" },
+       "MasterUsername"    : { "Ref" : "DBUser" },
+       "DBInstanceClass"   : { "Ref" : "DBClass" },
+       "AllocatedStorage"  : { "Ref" : "DBAllocatedStorage" },
+       "MasterUserPassword": { "Ref" : "DBPassword" },
+       "VPCSecurityGroups" : [ { "Fn::GetAtt": [ "DBEC2SecurityGroup", "GroupId" ] } ]
+     }
+   }
+ }
